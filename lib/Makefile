@@ -46,9 +46,9 @@ WIN_O = crt1.o crt1w.o wincrt1.o wincrt1w.o dllcrt1.o dllmain.o winex.o
 LIN_O = dsohandle.o
 OSX_O =
 
-# backtrace/bcheck/run only for native compiler
+# Build backtrace and bounds support for native or explicitly requested targets.
 Nat = $(if $X,no,)
-Cbt = $(Nat)$(subst yes,,$(CONFIG_backtrace))
+Cbt = $(if $(filter yes,$(CROSS_RUNTIME)),,$(Nat))$(subst yes,,$(CONFIG_backtrace))
 Cbc = $(Cbt)$(subst yes,,$(CONFIG_bcheck))
 
 $(Nat)COMMON_O += runmain.o tcov.o
@@ -80,7 +80,7 @@ OBJ-riscv64 = $(RISCV64_O) armflush.o $(LIN_O)
 OBJ-extra = $(filter $(EXTRA_O),$(OBJ-$T))
 OBJ-libtcc1 = $(addprefix $(X),$(filter-out $(OBJ-extra),$(OBJ-$T)))
 
-ALL = $(addprefix $(TOP)/,$(X)libtcc1.a $(OBJ-extra))
+ALL = $(addprefix $(TOP)/,$(X)libtcc1.a $(addprefix $(X),$(OBJ-extra)))
 
 all: $(ALL)
 
@@ -100,6 +100,16 @@ $(TOP)/bcheck.o : XFLAGS += $(BFLAGS)
 $(TOP)/bcheck_run.o : bcheck.c $(TCC)
 	$S$(XCC) -c $< -o $@ $(XFLAGS)  $(BFLAGS) -DBCHECK_RUN
 
+# Cross support objects need the target architecture when including tcc.h.
+ifneq ($(X),)
+$(TOP)/$(X)%.o : %.c $(TCC)
+	$S$(XCC) -c $< -o $@ $(XFLAGS) $(DEF-$T)
+
+$(TOP)/$(X)bcheck.o : XFLAGS += $(BFLAGS)
+$(TOP)/$(X)bcheck_run.o : bcheck.c $(TCC)
+	$S$(XCC) -c $< -o $@ $(XFLAGS) $(DEF-$T) $(BFLAGS) -DBCHECK_RUN
+endif
+
 $(X)crt1w.o : crt1.c
 $(X)wincrt1w.o : wincrt1.c
 
@@ -107,4 +117,4 @@ $(X)wincrt1w.o : wincrt1.c
 $(TCC) : ;
 
 clean :
-	rm -f *.o $(addprefix $(TOP)/,*libtcc1.a $(EXTRA_O))
+	rm -f *.o $(addprefix $(TOP)/,*libtcc1.a $(EXTRA_O) $(addprefix *-,$(EXTRA_O)))

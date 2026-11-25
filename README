@@ -48,6 +48,14 @@ Hosted linking requires a Linux ILP32D sysroot. When cross-compiling,
 long double constants and constant expressions use the build compiler's
 long double precision.
 
+With the target sysroot installed at the cross compiler's configured path,
+run make cross-runtime-riscv32 to build the target bounds and backtrace
+objects. Run make test-riscv32-bounds with RV32_SYSROOT set to the sysroot
+used by qemu-riscv32 to exercise the bounds checker. The same configuration
+supports make test-riscv32-hosted for additional compiler tests.
+RV32_TEST_LDFLAGS can provide additional linker search options for the target
+libraries.
+
 
 2) Introduction
 

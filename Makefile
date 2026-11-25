@@ -153,7 +153,19 @@ cross: $(LIBTCC1_CROSS) $(PROGS_CROSS)
 test-riscv32: cross-riscv32
 	$(TOPSRC)/tests/riscv32-smoke.sh ./riscv32-tcc$(EXESUF) $(TOPSRC)/tests riscv32-libtcc1.a
 
+.PHONY: test-riscv32-bounds
+test-riscv32-bounds: cross-runtime-riscv32
+	$(TOPSRC)/tests/riscv32-bounds.sh ./riscv32-tcc$(EXESUF) $(TOPSRC)/tests
+
+.PHONY: test-riscv32-hosted
+test-riscv32-hosted: cross-riscv32
+	$(TOPSRC)/tests/riscv32-hosted.sh ./riscv32-tcc$(EXESUF) $(TOPSRC)/tests
+
 cross-%: %-tcc$(EXESUF) %-libtcc1.a ;
+
+# Build the target-side backtrace and bounds support when a sysroot is installed.
+cross-runtime-%: %-tcc$(EXESUF)
+	@$(MAKE) -C lib CROSS_TARGET=$* CROSS_RUNTIME=yes
 
 install: ; @$(MAKE) --no-print-directory  install$(CFG)
 install-strip: ; @$(MAKE) --no-print-directory  install$(CFG) CONFIG_strip=yes
@@ -381,12 +393,14 @@ IM = @echo "-> $2 : $1" ;
 BINCHECK = $(if $(wildcard $(PROGS) *-tcc$(EXESUF)),,@echo "Makefile: nothing found to install" && exit 1)
 
 EXTRA_O = runmain.o bt-exe.o bt-dll.o bt-log.o bcheck.o bcheck_run.o
+CROSS_EXTRA_W = $(foreach t,$(filter %-win32 arm-wince,$(TCC_X)),$(addprefix $(t)-,$(EXTRA_O)))
+CROSS_EXTRA_U = $(foreach t,$(filter-out %-win32 arm-wince,$(TCC_X)),$(addprefix $(t)-,$(EXTRA_O)))
 
 # install progs & libs
 install-unx:
 	$(call BINCHECK)
 	$(call IBw,$(PROGS) *-tcc,"$(bindir)")
-	$(call IFw,$(LIBTCC1) $(EXTRA_O) $(LIBTCC1_U),"$(tccdir)")
+	$(call IFw,$(LIBTCC1) $(EXTRA_O) $(CROSS_EXTRA_U) $(LIBTCC1_U),"$(tccdir)")
 	$(call IF,$(TOPSRC)/include/*.h $(TOPSRC)/tcclib.h,"$(tccdir)/include")
 	$(call $(if $(findstring .so,$(LIBTCC)),IBw,IFw),$(LIBTCC),"$(libdir)")
 	$(call IF,$(TOPSRC)/libtcc.h,"$(includedir)")
@@ -394,7 +408,7 @@ install-unx:
 	$(call IFw,tcc-doc.info,"$(infodir)")
 	$(call IFw,tcc-doc.html,"$(docdir)")
 ifneq "$(wildcard $(LIBTCC1_W))" ""
-	$(call IFw,$(TOPSRC)/win32/lib/*.def $(LIBTCC1_W),"$(tccdir)/win32/lib")
+	$(call IFw,$(TOPSRC)/win32/lib/*.def $(LIBTCC1_W) $(CROSS_EXTRA_W),"$(tccdir)/win32/lib")
 	$(call IR,$(TOPSRC)/win32/include,"$(tccdir)/win32/include")
 	$(call IF,$(TOPSRC)/include/*.h $(TOPSRC)/tcclib.h,"$(tccdir)/win32/include")
 endif
@@ -413,7 +427,7 @@ install-win:
 	$(call BINCHECK)
 	$(call IBw,$(PROGS) *-tcc.exe libtcc.dll,"$(bindir)")
 	$(call IF,$(TOPSRC)/win32/lib/*.def,"$(tccdir)/lib")
-	$(call IFw,libtcc1.a $(EXTRA_O) $(LIBTCC1_W),"$(tccdir)/lib")
+	$(call IFw,libtcc1.a $(EXTRA_O) $(CROSS_EXTRA_W) $(LIBTCC1_W),"$(tccdir)/lib")
 	$(call IF,$(TOPSRC)/include/*.h $(TOPSRC)/tcclib.h,"$(tccdir)/include")
 	$(call IR,$(TOPSRC)/win32/include,"$(tccdir)/include")
 	$(call IR,$(TOPSRC)/win32/examples,"$(tccdir)/examples")
@@ -421,7 +435,7 @@ install-win:
 	$(call IFw,$(TOPSRC)/libtcc.h libtcc.def libtcc.a,"$(libdir)")
 	$(call IFw,$(TOPSRC)/win32/tcc-win32.txt tcc-doc.html,"$(docdir)")
 ifneq "$(wildcard $(LIBTCC1_U))" ""
-	$(call IFw,$(LIBTCC1_U),"$(tccdir)/lib")
+	$(call IFw,$(LIBTCC1_U) $(CROSS_EXTRA_U),"$(tccdir)/lib")
 	$(call IF,$(TOPSRC)/include/*.h $(TOPSRC)/tcclib.h,"$(tccdir)/lib/include")
 endif
 
