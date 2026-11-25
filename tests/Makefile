@@ -315,6 +315,7 @@ CROSS-TGTS = \
  arm64-FreeBSD \
  arm64-NetBSD \
  arm64-OpenBSD \
+ riscv32 \
  riscv64 \
  c67
 

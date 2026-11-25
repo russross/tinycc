@@ -617,7 +617,7 @@ ST_FUNC void greloca(Section *s, Sym *sym, unsigned long offset, int type,
     put_elf_reloca(symtab_section, s, offset, type, c, addend);
 }
 
-#if PTR_SIZE == 4
+#if SHT_RELX == SHT_REL
 ST_FUNC void greloc(Section *s, Sym *sym, unsigned long offset, int type)
 {
     greloca(s, sym, offset, type, 0);
@@ -1841,13 +1841,31 @@ static int adjust_bf(SValue *sv, int bit_pos, int bit_size)
     return t;
 }
 
-/* store vtop a register belonging to class 'rc'. lvalues are
-   converted to values. Cannot be used if cannot be converted to
-   register value (such as structures). */
+/* Place a floating constant in target-format, addressable storage. */
+ST_FUNC void materialize_float_constant(void)
+{
+    int size, align;
+    if (is_float(vtop->type.t) &&
+        (vtop->r & (VT_VALMASK | VT_LVAL)) == VT_CONST) {
+        /* CPUs usually cannot use float constants, so we store them
+           generically in data segment */
+        init_params p = { rodata_section };
+        unsigned long offset;
+        size = type_size(&vtop->type, &align);
+        if (NODATA_WANTED)
+            size = 0, align = 1;
+        offset = section_add(p.sec, size, align);
+        vpush_ref(&vtop->type, p.sec, offset, size);
+	    vswap();
+	    init_putv(&p, &vtop->type, offset);
+	    vtop->r |= VT_LVAL;
+    }
+}
+
 ST_FUNC int gv(int rc)
 {
     int r, r2, r_ok, r2_ok, rc2, bt;
-    int bit_pos, bit_size, size, align;
+    int bit_pos, bit_size;
 
     /* NOTE: get_reg can modify vstack[] */
     if (vtop->type.t & VT_BITFIELD) {
@@ -1885,21 +1903,7 @@ ST_FUNC int gv(int rc)
         }
         r = gv(rc);
     } else {
-        if (is_float(vtop->type.t) && 
-            (vtop->r & (VT_VALMASK | VT_LVAL)) == VT_CONST) {
-            /* CPUs usually cannot use float constants, so we store them
-               generically in data segment */
-            init_params p = { rodata_section };
-            unsigned long offset;
-            size = type_size(&vtop->type, &align);
-            if (NODATA_WANTED)
-                size = 0, align = 1;
-            offset = section_add(p.sec, size, align);
-            vpush_ref(&vtop->type, p.sec, offset, size);
-	    vswap();
-	    init_putv(&p, &vtop->type, offset);
-	    vtop->r |= VT_LVAL;
-        }
+        materialize_float_constant();
 #ifdef CONFIG_TCC_BCHECK
         if (vtop->r & VT_MUSTBOUND) 
             gbound();
@@ -1908,6 +1912,11 @@ ST_FUNC int gv(int rc)
         bt = vtop->type.t & VT_BTYPE;
         if (bt == VT_VOID || bt == VT_STRUCT) /* should not happen */
             return vtop->r;
+#ifdef TCC_TARGET_RISCV32
+        /* Binary128 expressions live in memory, including call results. */
+        if (bt == VT_LDOUBLE)
+            return vtop->r;
+#endif
 
 #ifdef TCC_TARGET_RISCV64
         /* XXX mega hack */
@@ -2067,6 +2076,17 @@ static void gv_dup(void)
     int t, rc, r;
 
     t = vtop->type.t;
+#ifdef TCC_TARGET_RISCV32
+    if ((t & VT_BTYPE) == VT_LDOUBLE) {
+        CType type = vtop->type;
+        loc = (loc - LDOUBLE_SIZE) & -LDOUBLE_ALIGN;
+        vdup();
+        vset(&type, VT_LOCAL | VT_LVAL, loc);
+        vswap();
+        vstore();
+        return;
+    }
+#endif
 #if PTR_SIZE == 4
     if ((t & VT_BTYPE) == VT_LLONG) {
         if (t & VT_BITFIELD) {
@@ -2301,6 +2321,14 @@ static void gen_opl(int op)
             op1 = TOK_UGE;
         a = 0;
         b = 0;
+#ifdef TCC_TARGET_RISCV32
+        /* RISC-V comparisons keep operands instead of setting flags.
+           Retain the high words for the subsequent inequality test. */
+        if (op != TOK_EQ && op != TOK_NE) {
+            vpushv(vtop - 1);
+            vpushv(vtop - 1);
+        }
+#endif
         gen_op(op1);
         if (op == TOK_NE) {
             b = gvtst(0, 0);
@@ -2308,8 +2336,12 @@ static void gen_opl(int op)
             a = gvtst(1, 0);
             if (op != TOK_EQ) {
                 /* generate non equal test */
+#ifdef TCC_TARGET_RISCV32
+                gen_op(TOK_NE);
+#else
                 vpushi(0);
                 vset_VT_CMP(TOK_NE);
+#endif
                 b = gvtst(0, 0);
             }
         }
@@ -2646,6 +2678,12 @@ static void gen_opif(int op)
     } else {
     general_case:
         if (op == TOK_NEG) {
+#ifdef TCC_TARGET_RISCV32
+            if ((vtop->type.t & VT_BTYPE) == VT_LDOUBLE) {
+                gen_opf(op);
+                return;
+            }
+#endif
             gen_negf(op);
         } else {
             gen_opf(op);
@@ -3198,7 +3236,7 @@ op_err:
         gv(RC_TYPE(vtop->type.t));
 }
 
-#if defined TCC_TARGET_ARM64 || defined TCC_TARGET_RISCV64 || defined TCC_TARGET_ARM
+#if defined TCC_TARGET_ARM64 || defined TCC_TARGET_RISCV || defined TCC_TARGET_ARM
 #define gen_cvt_itof1 gen_cvt_itof
 #else
 /* generic itof for unsigned long long case */
@@ -3225,7 +3263,7 @@ static void gen_cvt_itof1(int t)
 }
 #endif
 
-#if defined TCC_TARGET_ARM64 || defined TCC_TARGET_RISCV64
+#if defined TCC_TARGET_ARM64 || defined TCC_TARGET_RISCV
 #define gen_cvt_ftoi1 gen_cvt_ftoi
 #else
 /* generic ftoi for unsigned long long case */
@@ -3755,7 +3793,18 @@ ST_FUNC void vstore(void)
     dbt = ft & VT_BTYPE;
     verify_assign_cast(&vtop[-1].type);
 
-    if (sbt == VT_STRUCT) {
+#ifdef TCC_TARGET_RISCV32
+    if (dbt == VT_LDOUBLE) {
+        gen_cast(&vtop[-1].type);
+        materialize_float_constant();
+        sbt = VT_LDOUBLE;
+    }
+#endif
+    if (sbt == VT_STRUCT
+#ifdef TCC_TARGET_RISCV32
+        || dbt == VT_LDOUBLE
+#endif
+        ) {
         /* if structure, only generate pointer */
         /* structure assignment : generate memcpy */
         size = type_size(&vtop->type, &align);
@@ -5966,7 +6015,7 @@ ST_FUNC void unary(void)
             mk_pointer(&type);
             vset(&type, VT_LOCAL, 0);       /* local frame */
             while (level--) {
-#ifdef TCC_TARGET_RISCV64
+#ifdef TCC_TARGET_RISCV
                 vpushi(2*PTR_SIZE);
                 gen_op('-');
 #endif
@@ -5978,7 +6027,7 @@ ST_FUNC void unary(void)
 #ifdef TCC_TARGET_ARM
                 vpushi(2*PTR_SIZE);
                 gen_op('+');
-#elif defined TCC_TARGET_RISCV64
+#elif defined TCC_TARGET_RISCV
                 vpushi(PTR_SIZE);
                 gen_op('-');
 #else
@@ -5990,7 +6039,7 @@ ST_FUNC void unary(void)
             }
         }
         break;
-#ifdef TCC_TARGET_RISCV64
+#ifdef TCC_TARGET_RISCV
     case TOK_builtin_va_start:
         parse_builtin_params(0, "ee");
         r = vtop->r & VT_VALMASK;
@@ -6320,7 +6369,11 @@ special_math_val:
             nb_args = regsize = 0;
             ret.r2 = VT_CONST;
             /* compute first implicit argument if a structure is returned */
-            if ((s->type.t & VT_BTYPE) == VT_STRUCT) {
+            if ((s->type.t & VT_BTYPE) == VT_STRUCT
+#ifdef TCC_TARGET_RISCV32
+                || (s->type.t & VT_BTYPE) == VT_LDOUBLE
+#endif
+                ) {
                 variadic = (s->f.func_type == FUNC_ELLIPSIS);
                 ret_nregs = gfunc_sret(&s->type, variadic, &ret.type,
                                        &ret_align, &regsize);
@@ -6406,7 +6459,7 @@ special_math_val:
 
             if (ret_nregs < 0) {
                 vsetc(&ret.type, ret.r, &ret.c);
-#ifdef TCC_TARGET_RISCV64
+#ifdef TCC_TARGET_RISCV
                 arch_transfer_ret_regs(1);
 #endif
             } else {
@@ -6771,17 +6824,23 @@ static void expr_cond(void)
         /* keep structs lvalue by transforming `(expr ? a : b)` to `*(expr ? &a : &b)` so
            that `(expr ? a : b).mem` does not error  with "lvalue expected" */
         islv = VT_STRUCT == (type.t & VT_BTYPE);
+#ifdef TCC_TARGET_RISCV32
+        islv |= VT_LDOUBLE == (type.t & VT_BTYPE);
+#endif
 
         /* now we convert second operand */
         if (c != 1) {
             gen_cast(&type);
             if (islv) {
+#ifdef TCC_TARGET_RISCV32
+                materialize_float_constant();
+#endif
                 mk_pointer(&vtop->type);
                 gaddrof();
             }
         }
 
-        rc = RC_TYPE(type.t);
+        rc = islv ? RC_INT : RC_TYPE(type.t);
         /* for long longs, we use fixed registers to avoid having
            to handle a complicated move */
         if (USING_TWO_WORDS(type.t))
@@ -6803,6 +6862,9 @@ static void expr_cond(void)
             *vtop = sv;
             gen_cast(&type);
             if (islv) {
+#ifdef TCC_TARGET_RISCV32
+                materialize_float_constant();
+#endif
                 mk_pointer(&vtop->type);
                 gaddrof();
             }
@@ -6925,13 +6987,17 @@ ST_FUNC int expr_const(void)
 #ifndef TCC_TARGET_ARM64
 static void gfunc_return(CType *func_type)
 {
-    if ((func_type->t & VT_BTYPE) == VT_STRUCT) {
+    if ((func_type->t & VT_BTYPE) == VT_STRUCT
+#ifdef TCC_TARGET_RISCV32
+        || (func_type->t & VT_BTYPE) == VT_LDOUBLE
+#endif
+        ) {
         CType type, ret_type;
         int ret_align, ret_nregs, regsize;
         ret_nregs = gfunc_sret(func_type, func_var, &ret_type,
                                &ret_align, &regsize);
         if (ret_nregs < 0) {
-#ifdef TCC_TARGET_RISCV64
+#ifdef TCC_TARGET_RISCV
             arch_transfer_ret_regs(0);
 #endif
         } else if (0 == ret_nregs) {
@@ -6947,6 +7013,12 @@ static void gfunc_return(CType *func_type)
         } else {
             /* returning structure packed into registers */
             int size, addr, align, rc, n;
+#ifdef CONFIG_TCC_BCHECK
+            /* Check the entire source before loading either result register.
+               A bounds helper call would overwrite the first result. */
+            if (ret_nregs > 1 && (vtop->r & VT_MUSTBOUND))
+                gbound();
+#endif
             size = type_size(func_type,&align);
             if (ret_nregs * regsize > size ||
 		((align & (ret_align - 1))
@@ -7094,7 +7166,15 @@ static void save_lvalues(void)
     while (sv >= vstack) {
         if (sv->sym && (sv->r & VT_LVAL)) {
             int align, size = type_size(&sv->type, &align);
-            int r2, l = get_temp_local_var(size, align, &r2);
+            int r2, l;
+#ifdef TCC_TARGET_RISCV32
+            if ((sv->type.t & VT_BTYPE) == VT_STRUCT) {
+                /* The preserved aggregate must survive calls made by cleanup. */
+                l = loc = (loc - size) & -align;
+                r2 = VT_CONST;
+            } else
+#endif
+                l = get_temp_local_var(size, align, &r2);
             vset(&sv->type, VT_LOCAL | VT_LVAL, l), vtop->r2 = r2;
             vpushv(sv), *sv = vtop[-1], vstore(), --vtop;
         }
@@ -7965,7 +8045,7 @@ static void write_ldouble(unsigned char *d, void *s)
     #elif (__i386__ || __x86_64__) && (defined TCC_TARGET_I386 || defined TCC_TARGET_X86_64)
         /* extended -> extended */
         memcpy(d, s, 10);
-    #elif (__i386__ || __x86_64__) && (defined TCC_TARGET_ARM64 || defined TCC_TARGET_RISCV64)
+    #elif (__i386__ || __x86_64__) && (defined TCC_TARGET_ARM64 || defined TCC_TARGET_RISCV)
         /* extended -> quad */
         uint64_t m = *(uint64_t*)s;
         int e = *(uint16_t*)((char*)s + 8);
@@ -8055,7 +8135,7 @@ static void init_putv(init_params *p, CType *type, unsigned long c)
 				   c + rel->r_offset - esym->st_value,
 				   ELFW(R_TYPE)(rel->r_info),
 				   ELFW(R_SYM)(rel->r_info),
-#if PTR_SIZE == 8
+#if SHT_RELX == SHT_RELA
 				   rel->r_addend
 #else
 				   0
@@ -8119,9 +8199,16 @@ static void init_putv(init_params *p, CType *type, unsigned long c)
                 break;
             case VT_PTR:
             case VT_INT:
-	        if (vtop->r & VT_SYM)
-	          greloc(sec, vtop->sym, c, R_DATA_PTR);
-	        write32le(ptr, val);
+#if SHT_RELX == SHT_RELA
+                if (vtop->r & VT_SYM) {
+                    greloca(sec, vtop->sym, c, R_DATA_PTR, val);
+                    val = 0;
+                }
+#else
+                if (vtop->r & VT_SYM)
+                    greloc(sec, vtop->sym, c, R_DATA_PTR);
+#endif
+                write32le(ptr, val);
 	        break;
 #endif
 	    default:

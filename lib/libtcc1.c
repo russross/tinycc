@@ -357,6 +357,31 @@ static UDWtype __udivmoddi4 (UDWtype n, UDWtype d, UDWtype *rp)
   return ww.ll;
 }
 
+#elif defined __riscv && __riscv_xlen == 32
+static UDWtype __udivmoddi4(UDWtype dividend, UDWtype divisor, UDWtype *remainder)
+{
+    UDWtype quotient = 0, rest = 0;
+    int i;
+
+    /* Shift one dividend bit per iteration. Keep the carry from the
+       remainder so a divisor with its top bit set works too. */
+    for (i = 0; i < 64; ++i) {
+        int carry = rest >> 63;
+        rest = (rest << 1) | (dividend >> 63);
+        dividend <<= 1;
+        quotient <<= 1;
+        if (carry || rest >= divisor) {
+            rest -= divisor;
+            quotient |= 1;
+        }
+    }
+    if (remainder)
+        *remainder = rest;
+    return quotient;
+}
+#endif
+
+#if defined __i386__ || (defined __riscv && __riscv_xlen == 32)
 #define __negdi2(a) (-(a))
 
 long long __divdi3(long long u, long long v)
@@ -474,8 +499,59 @@ long long __ashldi3(long long a, int b)
 #endif
 }
 
-#endif /* __i386__ */
+#endif /* 32-bit integer helpers */
 
+#if defined __riscv && __riscv_xlen == 32
+static UDWtype integer_to_fp_bits(UDWtype value, int fraction_bits, int bias)
+{
+    UDWtype high, low, half;
+    int bit = 0, shift;
+
+    if (!value)
+        return 0;
+    /* Locate the leading bit, then round the discarded bits to nearest even. */
+    for (high = value; high >>= 1; )
+        ++bit;
+    shift = bit - fraction_bits;
+    if (shift > 0) {
+        high = value >> shift;
+        low = value - (high << shift);
+        half = 1ULL << (shift - 1);
+        if (low > half || (low == half && (high & 1)))
+            ++high;
+    } else {
+        high = value << -shift;
+    }
+    /* Include the leading bit so a rounded carry also adjusts the exponent. */
+    return ((UDWtype)(bit + bias - 1) << fraction_bits) + high;
+}
+
+float __floatundisf(UDWtype value)
+{
+    union float_long bits;
+    bits.l = integer_to_fp_bits(value, 23, 127);
+    return bits.f;
+}
+
+double __floatundidf(UDWtype value)
+{
+    union double_long bits;
+    bits.ll = integer_to_fp_bits(value, 52, 1023);
+    return bits.d;
+}
+
+float __floatdisf(DWtype value)
+{
+    UDWtype magnitude = value;
+    return value < 0 ? -__floatundisf(0 - magnitude) : __floatundisf(magnitude);
+}
+
+double __floatdidf(DWtype value)
+{
+    UDWtype magnitude = value;
+    return value < 0 ? -__floatundidf(0 - magnitude) : __floatundidf(magnitude);
+}
+#else
 /* XXX: fix tcc's code generator to do this instead */
 float __floatundisf(unsigned long long a)
 {
@@ -521,6 +597,8 @@ long double __floatundixf(unsigned long long a)
         return (long double)r;
     }
 }
+
+#endif
 
 unsigned long long __fixunssfdi (float a1)
 {
@@ -590,7 +668,7 @@ long long __fixdfdi (double a1)
     return s ? ret : -ret;
 }
 
-#ifndef __arm__
+#if !defined __arm__ && !(defined __riscv && __riscv_xlen == 32)
 unsigned long long __fixunsxfdi (long double a1)
 {
     register union ldouble_long dl1;

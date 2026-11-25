@@ -2118,12 +2118,24 @@ _(atomic_flag_clear_explicit):
 
 /* ---------------------------------------------- */
 #if defined __riscv
+#if __riscv_xlen == 32
+#define addiw addi
+#define slliw slli
+#define sllw sll
+#define sraiw srai
+#define sraw sra
+#define srlw srl
+#define subw sub
+#define sext_w(rd, rs) mv rd,rs
+#else
+#define sext_w(rd, rs) sext.w rd,rs
+#endif
         .text
 
         .global _(__atomic_load_1)
         .type   _(__atomic_load_1), %function
 _(__atomic_load_1):
-#ifdef __TINYC__
+#if defined __TINYC__ && __riscv_xlen == 64
         .int 0x0330000f
         .int 0x00054503
         .int 0x0330000f
@@ -2139,7 +2151,7 @@ _(__atomic_load_1):
         .global _(__atomic_load_2)
         .type   _(__atomic_load_2), %function
 _(__atomic_load_2):
-#ifdef __TINYC__
+#if defined __TINYC__ && __riscv_xlen == 64
         .int 0x0330000f
         .int 0x00055503
         .int 0x0330000f
@@ -2155,7 +2167,7 @@ _(__atomic_load_2):
         .global _(__atomic_load_4)
         .type   _(__atomic_load_4), %function
 _(__atomic_load_4):
-#ifdef __TINYC__
+#if defined __TINYC__ && __riscv_xlen == 64
         .int 0x0330000f
         .short 0x4108
         .int 0x0230000f
@@ -2165,15 +2177,16 @@ _(__atomic_load_4):
         fence   rw,rw
         lw  a0,0(a0)
         fence   r,rw
-        sext.w  a0,a0
+        sext_w(a0, a0)
         ret
 	.size   _(__atomic_load_4), .-_(__atomic_load_4)
 
 #endif
+#if __riscv_xlen == 64
         .global _(__atomic_load_8)
         .type   _(__atomic_load_8), %function
 _(__atomic_load_8):
-#ifdef __TINYC__
+#if defined __TINYC__ && __riscv_xlen == 64
         .int 0x0330000f
         .short 0x6108
         .int 0x0230000f
@@ -2186,10 +2199,12 @@ _(__atomic_load_8):
 	.size   _(__atomic_load_8), .-_(__atomic_load_8)
 
 #endif
+#endif
+
         .global _(__atomic_store_1)
         .type   _(__atomic_store_1), %function
 _(__atomic_store_1):
-#ifdef __TINYC__
+#if defined __TINYC__ && __riscv_xlen == 64
         .int 0x0330000f
         .int 0x00b50023
         .int 0x0330000f
@@ -2205,7 +2220,7 @@ _(__atomic_store_1):
         .global _(__atomic_store_2)
         .type   _(__atomic_store_2), %function
 _(__atomic_store_2):
-#ifdef __TINYC__
+#if defined __TINYC__ && __riscv_xlen == 64
         .int 0x0330000f
         .int 0x00b51023
         .int 0x0330000f
@@ -2221,7 +2236,7 @@ _(__atomic_store_2):
         .global _(__atomic_store_4)
         .type   _(__atomic_store_4), %function
 _(__atomic_store_4):
-#ifdef __TINYC__
+#if defined __TINYC__ && __riscv_xlen == 64
         .int 0x0310000f
         .short 0xc10c
         .int 0x0330000f
@@ -2234,10 +2249,11 @@ _(__atomic_store_4):
 	.size   _(__atomic_store_4), .-_(__atomic_store_4)
 
 #endif
+#if __riscv_xlen == 64
         .global _(__atomic_store_8)
         .type   _(__atomic_store_8), %function
 _(__atomic_store_8):
-#ifdef __TINYC__
+#if defined __TINYC__ && __riscv_xlen == 64
         .int 0x0310000f
         .short 0xe10c
         .int 0x0330000f
@@ -2250,10 +2266,12 @@ _(__atomic_store_8):
 	.size   _(__atomic_store_8), .-_(__atomic_store_8)
 
 #endif
+#endif
+
         .global _(__atomic_compare_exchange_1)
         .type   _(__atomic_compare_exchange_1), %function
 _(__atomic_compare_exchange_1):
-#ifdef __TINYC__
+#if defined __TINYC__ && __riscv_xlen == 64
         .int 0x0005c683
         .int 0x00357793
         .int 0x0037979b
@@ -2322,7 +2340,7 @@ _(__atomic_compare_exchange_1):
         .global _(__atomic_compare_exchange_2)
         .type   _(__atomic_compare_exchange_2), %function
 _(__atomic_compare_exchange_2):
-#ifdef __TINYC__
+#if defined __TINYC__ && __riscv_xlen == 64
         .int 0x0005d683
         .int 0x00357713
         .short 0x67c1
@@ -2393,7 +2411,7 @@ _(__atomic_compare_exchange_2):
         .global _(__atomic_compare_exchange_4)
         .type   _(__atomic_compare_exchange_4), %function
 _(__atomic_compare_exchange_4):
-#ifdef __TINYC__
+#if defined __TINYC__ && __riscv_xlen == 64
         .short 0x419c
         .int 0x1605272f
         .int 0x00f71563
@@ -2423,10 +2441,11 @@ _(__atomic_compare_exchange_4):
 	.size   _(__atomic_compare_exchange_4), .-_(__atomic_compare_exchange_4)
 
 #endif
+#if __riscv_xlen == 64
         .global _(__atomic_compare_exchange_8)
         .type   _(__atomic_compare_exchange_8), %function
 _(__atomic_compare_exchange_8):
-#ifdef __TINYC__
+#if defined __TINYC__ && __riscv_xlen == 64
         .short 0x619c
         .int 0x1605372f
         .int 0x00f71563
@@ -2456,10 +2475,12 @@ _(__atomic_compare_exchange_8):
 	.size   _(__atomic_compare_exchange_8), .-_(__atomic_compare_exchange_8)
 
 #endif
+#endif
+
         .global _(__atomic_test_and_set_1)
         .type   _(__atomic_test_and_set_1), %function
 _(__atomic_test_and_set_1):
-#ifdef __TINYC__
+#if defined __TINYC__ && __riscv_xlen == 64
         .int 0x00357793
         .int 0x0037979b
         .short 0x4685
@@ -2477,7 +2498,7 @@ _(__atomic_test_and_set_1):
         sllw    a3,a3,a5
         amoor.w.aqrl    a4,a3,(a0)
         srlw    a0,a4,a5
-        zext.b  a0,a0
+        andi    a0,a0,255
         ret
 	.size   _(__atomic_test_and_set_1), .-_(__atomic_test_and_set_1)
 
@@ -2485,7 +2506,7 @@ _(__atomic_test_and_set_1):
         .global _(__atomic_test_and_set_2)
         .type   _(__atomic_test_and_set_2), %function
 _(__atomic_test_and_set_2):
-#ifdef __TINYC__
+#if defined __TINYC__ && __riscv_xlen == 64
         .int 0x00357793
         .int 0x0037979b
         .short 0x4685
@@ -2503,7 +2524,7 @@ _(__atomic_test_and_set_2):
         sllw    a3,a3,a5
         amoor.w.aqrl    a4,a3,(a0)
         srlw    a0,a4,a5
-        zext.b  a0,a0
+        andi    a0,a0,255
         ret
 	.size   _(__atomic_test_and_set_2), .-_(__atomic_test_and_set_2)
 
@@ -2511,7 +2532,7 @@ _(__atomic_test_and_set_2):
         .global _(__atomic_test_and_set_4)
         .type   _(__atomic_test_and_set_4), %function
 _(__atomic_test_and_set_4):
-#ifdef __TINYC__
+#if defined __TINYC__ && __riscv_xlen == 64
         .int 0x00357793
         .int 0x0037979b
         .short 0x4685
@@ -2529,15 +2550,16 @@ _(__atomic_test_and_set_4):
         sllw    a3,a3,a5
         amoor.w.aqrl    a4,a3,(a0)
         srlw    a0,a4,a5
-        zext.b  a0,a0
+        andi    a0,a0,255
         ret
 	.size   _(__atomic_test_and_set_4), .-_(__atomic_test_and_set_4)
 
 #endif
+#if __riscv_xlen == 64
         .global _(__atomic_test_and_set_8)
         .type   _(__atomic_test_and_set_8), %function
 _(__atomic_test_and_set_8):
-#ifdef __TINYC__
+#if defined __TINYC__ && __riscv_xlen == 64
         .int 0x00357793
         .int 0x0037979b
         .short 0x4685
@@ -2555,15 +2577,17 @@ _(__atomic_test_and_set_8):
         sllw    a3,a3,a5
         amoor.w.aqrl    a4,a3,(a0)
         srlw    a0,a4,a5
-        zext.b  a0,a0
+        andi    a0,a0,255
         ret
 	.size   _(__atomic_test_and_set_8), .-_(__atomic_test_and_set_8)
 
 #endif
+#endif
+
         .global _(atomic_thread_fence)
         .type   _(atomic_thread_fence), %function
 _(atomic_thread_fence):
-#ifdef __TINYC__
+#if defined __TINYC__ && __riscv_xlen == 64
         .int 0x0330000f
         .short 0x8082
 #else
@@ -2575,7 +2599,7 @@ _(atomic_thread_fence):
         .global _(atomic_signal_fence)
         .type   _(atomic_signal_fence), %function
 _(atomic_signal_fence):
-#ifdef __TINYC__
+#if defined __TINYC__ && __riscv_xlen == 64
         .short 0x8082
 #else
         ret
@@ -2585,7 +2609,7 @@ _(atomic_signal_fence):
         .global _(atomic_flag_test_and_set)
         .type   _(atomic_flag_test_and_set), %function
 _(atomic_flag_test_and_set):
-#ifdef __TINYC__
+#if defined __TINYC__ && __riscv_xlen == 64
         .int 0x00357793
         .int 0x0037979b
         .short 0x4685
@@ -2603,7 +2627,7 @@ _(atomic_flag_test_and_set):
         sllw    a3,a3,a5
         amoor.w.aqrl    a4,a3,(a0)
         srlw    a0,a4,a5
-        zext.b  a0,a0
+        andi    a0,a0,255
         ret
 	.size   _(atomic_flag_test_and_set), .-_(atomic_flag_test_and_set)
 
@@ -2611,7 +2635,7 @@ _(atomic_flag_test_and_set):
         .global _(atomic_flag_test_and_set_explicit)
         .type   _(atomic_flag_test_and_set_explicit), %function
 _(atomic_flag_test_and_set_explicit):
-#ifdef __TINYC__
+#if defined __TINYC__ && __riscv_xlen == 64
         .int 0x00357793
         .int 0x0037979b
         .short 0x4685
@@ -2629,7 +2653,7 @@ _(atomic_flag_test_and_set_explicit):
         sllw    a3,a3,a5
         amoor.w.aqrl    a4,a3,(a0)
         srlw    a0,a4,a5
-        zext.b  a0,a0
+        andi    a0,a0,255
         ret
 	.size   _(atomic_flag_test_and_set_explicit), .-_(atomic_flag_test_and_set_explicit)
 
@@ -2637,7 +2661,7 @@ _(atomic_flag_test_and_set_explicit):
         .global _(atomic_flag_clear)
         .type   _(atomic_flag_clear), %function
 _(atomic_flag_clear):
-#ifdef __TINYC__
+#if defined __TINYC__ && __riscv_xlen == 64
         .int 0x0330000f
         .int 0x00050023
         .int 0x0330000f
@@ -2653,7 +2677,7 @@ _(atomic_flag_clear):
         .global _(atomic_flag_clear_explicit)
         .type   _(atomic_flag_clear_explicit), %function
 _(atomic_flag_clear_explicit):
-#ifdef __TINYC__
+#if defined __TINYC__ && __riscv_xlen == 64
         .int 0x0330000f
         .int 0x00050023
         .int 0x0330000f
@@ -2665,5 +2689,66 @@ _(atomic_flag_clear_explicit):
         ret
 	.size   _(atomic_flag_clear_explicit), .-_(atomic_flag_clear_explicit)
 
+#endif
+
+#if __riscv_xlen == 32
+        /* All eight-byte operations use one lock. Word and subword operations
+           above retain the same LR/SC and fence ordering as RV64. */
+#define lock8 lla t0,.Llock8; 1: amoswap.w.aqrl t1,t2,(t0); bnez t1,1b
+#define unlock8 amoswap.w.rl zero,zero,(t0)
+        .globl _(__atomic_load_8)
+_(__atomic_load_8):
+        li t2,1
+        lock8
+        lw a1,4(a0)
+        lw a0,0(a0)
+        unlock8
+        ret
+
+        .globl _(__atomic_store_8)
+_(__atomic_store_8):
+        li t2,1
+        lock8
+        sw a1,0(a0)
+        sw a2,4(a0)
+        unlock8
+        ret
+
+        .globl _(__atomic_compare_exchange_8)
+_(__atomic_compare_exchange_8):
+        li t2,1
+        lock8
+        lw t3,0(a0)
+        lw t4,4(a0)
+        lw t5,0(a1)
+        lw t6,4(a1)
+        bne t3,t5,2f
+        bne t4,t6,2f
+        sw a2,0(a0)
+        sw a3,4(a0)
+        li a0,1
+        j 3f
+2:
+        sw t3,0(a1)
+        sw t4,4(a1)
+        li a0,0
+3:
+        unlock8
+        ret
+
+        .globl _(__atomic_test_and_set_8)
+_(__atomic_test_and_set_8):
+        li t2,1
+        lock8
+        lbu t3,0(a0)
+        sb t2,0(a0)
+        mv a0,t3
+        unlock8
+        ret
+
+        .bss
+        .balign 4
+.Llock8:
+        .space 4
 #endif
 #endif //__riscv

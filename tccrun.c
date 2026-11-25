@@ -492,7 +492,7 @@ static int protect_pages(void *ptr, unsigned long length, int mode)
 #endif
 /* XXX: BSD sometimes dump core with bad system call */
 #if (defined TCC_TARGET_ARM && !TARGETOS_BSD) \
-    || defined TCC_TARGET_ARM64 || defined TCC_TARGET_RISCV64
+    || defined TCC_TARGET_ARM64 || defined TCC_TARGET_RISCV
     if (mode == 0 || mode == 3) {
 #ifdef _WIN32
         FlushInstructionCache(GetCurrentProcess(), ptr, length);

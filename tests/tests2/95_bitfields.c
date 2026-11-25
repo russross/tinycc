@@ -80,7 +80,8 @@
 /* ----------------------------------------------------------------------- */
 #elif TEST == 7
 {
-#ifdef _WIN32
+/* Use an eight-byte base type for the shared output fixture. */
+#if defined(_WIN32) || (defined(__riscv) && __riscv_xlen == 32)
     typedef long long int ll;
 #else
     typedef long int ll;

@@ -182,7 +182,7 @@
 #elif defined TCC_TARGET_ARM64
      DEF(TOK_builtin_va_start, "__builtin_va_start")
      DEF(TOK_builtin_va_arg, "__builtin_va_arg")
-#elif defined TCC_TARGET_RISCV64
+#elif defined TCC_TARGET_RISCV
      DEF(TOK_builtin_va_start, "__builtin_va_start")
 #endif
 
@@ -209,7 +209,7 @@
      DEF(TOK_pack, "pack")
 #if !defined(TCC_TARGET_I386) && !defined(TCC_TARGET_X86_64) && \
     !defined(TCC_TARGET_ARM) && !defined(TCC_TARGET_ARM64) && \
-    !defined(TCC_TARGET_RISCV64)
+    !defined(TCC_TARGET_RISCV)
      /* already defined for assembler */
      DEF(TOK_ASM_push, "push")
      DEF(TOK_ASM_pop, "pop")
@@ -295,7 +295,11 @@
      DEF(TOK__remu, "_remu")
 #endif
 
-#if defined TCC_TARGET_I386
+#if defined TCC_TARGET_RISCV32
+     DEF(TOK___floatdisf, "__floatdisf")
+     DEF(TOK___floatdidf, "__floatdidf")
+#endif
+#if defined TCC_TARGET_I386 || defined TCC_TARGET_RISCV32
      DEF(TOK___fixsfdi, "__fixsfdi")
      DEF(TOK___fixdfdi, "__fixdfdi")
      DEF(TOK___fixxfdi, "__fixxfdi")
@@ -316,7 +320,7 @@
 #ifdef TCC_TARGET_RISCV64
      DEF(TOK___riscv64_clear_cache, "__riscv64_clear_cache")
 #endif
-#if defined TCC_TARGET_ARM64 || defined TCC_TARGET_RISCV64
+#if defined TCC_TARGET_ARM64 || defined TCC_TARGET_RISCV
      DEF(TOK___addtf3, "__addtf3")
      DEF(TOK___subtf3, "__subtf3")
      DEF(TOK___multf3, "__multf3")
@@ -417,7 +421,7 @@
 #else
  DEF_ASMDIR(code64)
 #endif
-#if defined(TCC_TARGET_RISCV64)
+#if defined(TCC_TARGET_RISCV)
  DEF_ASMDIR(option)
 #endif
  DEF_ASMDIR(short)
@@ -439,6 +443,6 @@
 #include "arm64-tok.h"
 #endif
 
-#if defined TCC_TARGET_RISCV64
-#include "riscv64-tok.h"
+#if defined TCC_TARGET_RISCV
+#include "riscv-tok.h"
 #endif

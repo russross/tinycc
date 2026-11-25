@@ -1189,7 +1189,7 @@ static void relocate_section(TCCState *s1, Section *s, Section *sr)
     }
 #endif
 
-#ifdef TCC_TARGET_RISCV64
+#ifdef TCC_TARGET_RISCV
     dynarray_reset(&s1->pcrel_hi_entries, &s1->nb_pcrel_hi_entries);
 #endif
 }
@@ -1232,7 +1232,7 @@ static int prepare_dynamic_rel(TCCState *s1, Section *sr)
     int count = 0;
 #if defined(TCC_TARGET_I386) || defined(TCC_TARGET_X86_64) || \
     defined(TCC_TARGET_ARM) || defined(TCC_TARGET_ARM64) || \
-    defined(TCC_TARGET_RISCV64)
+    defined(TCC_TARGET_RISCV)
     ElfW_Rel *rel;
     for_each_elem(sr, 0, rel, ElfW_Rel) {
         int sym_index = ELFW(R_SYM)(rel->r_info);
@@ -1256,9 +1256,29 @@ static int prepare_dynamic_rel(TCCState *s1, Section *sr)
 #elif defined(TCC_TARGET_ARM64)
         case R_AARCH64_ABS32:
         case R_AARCH64_ABS64:
-#elif defined(TCC_TARGET_RISCV64)
-        case R_RISCV_32:
+#elif defined(TCC_TARGET_RISCV)
+#ifdef TCC_TARGET_RISCV32
         case R_RISCV_64:
+        case R_RISCV_32_PCREL: {
+            ElfW(Sym) *sym = (ElfW(Sym) *)symtab_section->data + sym_index;
+            int absolute = !sym_index || sym->st_shndx == SHN_ABS;
+            int preemptible = s1->output_type == TCC_OUTPUT_DLL && !s1->symbolic &&
+                ELFW(ST_BIND)(sym->st_info) != STB_LOCAL &&
+                ELFW(ST_VISIBILITY)(sym->st_other) == STV_DEFAULT;
+            /* These relocations have no RV32 dynamic counterpart. A
+               PC-relative value cancels the load bias for a local target. */
+            if (absolute != (type == R_RISCV_64) ||
+                (sym_index && (sym->st_shndx == SHN_UNDEF || preemptible)))
+                tcc_error_noabort("%s requires a dynamic relocation in %s",
+                    type == R_RISCV_64 ? "R_RISCV_64" : "R_RISCV_32_PCREL",
+                    s1->sections[sr->sh_info]->name);
+            break;
+        }
+#endif
+        case R_RISCV_32:
+#if PTR_SIZE == 8
+        case R_RISCV_64:
+#endif
 #endif
             count++;
             break;
@@ -1934,7 +1954,7 @@ static void tcc_add_linker_symbols(TCCState *s1)
     set_global_sym(s1, "__executable_start", NULL, ELF_START_ADDR);
 #endif
 
-#ifdef TCC_TARGET_RISCV64
+#ifdef TCC_TARGET_RISCV
     /* XXX should be .sdata+0x800, not .data+0x800 */
     set_global_sym(s1, "__global_pointer$", data_section, 0x800);
 #endif
@@ -2584,7 +2604,7 @@ static void fill_dynamic(TCCState *s1, struct dyn_inf *dyninf)
     put_dt(dynamic, DT_SYMTAB, s1->dynsym->sh_addr);
     put_dt(dynamic, DT_STRSZ, dyninf->dynstr->data_offset);
     put_dt(dynamic, DT_SYMENT, sizeof(ElfW(Sym)));
-#if PTR_SIZE == 8
+#if SHT_RELX == SHT_RELA
     put_dt(dynamic, DT_RELA, dyninf->rel_addr);
     put_dt(dynamic, DT_RELASZ, dyninf->rel_size);
     put_dt(dynamic, DT_RELAENT, sizeof(ElfW_Rel));
@@ -2713,6 +2733,8 @@ static int tcc_output_elf(TCCState *s1, FILE *f, int phnum, ElfW(Phdr) *phdr)
         ? EF_ARM_VFP_FLOAT : EF_ARM_SOFT_FLOAT;
 #elif defined TCC_TARGET_ARM
     ehdr.e_ident[EI_OSABI] = ELFOSABI_ARM;
+#elif defined TCC_TARGET_RISCV32
+    ehdr.e_flags = EF_RISCV_FLOAT_ABI_DOUBLE | EF_RISCV_RVC;
 #elif defined TCC_TARGET_RISCV64
     /* XXX should be configurable */
     ehdr.e_flags = EF_RISCV_FLOAT_ABI_DOUBLE;
@@ -2845,6 +2867,39 @@ static int tcc_write_elf_file(TCCState *s1, const char *filename, int phnum,
     return ret;
 }
 
+#ifdef TCC_TARGET_RISCV
+static void create_riscv_attribute_section(TCCState *s1)
+{
+    static const char arch[] =
+#if PTR_SIZE == 4
+        "rv32"
+#else
+        "rv64"
+#endif
+        "i2p1_m2p0_a2p1_f2p2_d2p2_c2p0_zicsr2p0_zifencei2p0";
+    static const char vendor[] = "riscv";
+    static const unsigned char attributes[] = { 4, 16, 5 };
+    unsigned file_size = 1 + 4 + sizeof(attributes) + sizeof(arch);
+    unsigned vendor_size = 4 + sizeof(vendor) + file_size;
+    Section *attr = new_section(s1, ".riscv.attributes", SHT_RISCV_ATTRIBUTES, 0);
+    unsigned char *p = section_ptr_add(attr, 1 + vendor_size);
+
+    attr->sh_addralign = 1;
+    *p++ = 'A';
+    write32le(p, vendor_size);
+    p += 4;
+    memcpy(p, vendor, sizeof(vendor));
+    p += sizeof(vendor);
+
+    /* Tag_File contains stack alignment and a NUL-terminated ISA string. */
+    *p++ = 1;
+    write32le(p, file_size);
+    p += 4;
+    memcpy(p, attributes, sizeof(attributes));
+    memcpy(p + sizeof(attributes), arch, sizeof(arch));
+}
+#endif
+
 #ifndef ELF_OBJ_ONLY
 /* order sections according to sec_order, remove sections
    that we aren't going to output.  */
@@ -2923,27 +2978,7 @@ static void create_arm_attribute_section(TCCState *s1)
 }
 #endif
 
-#ifdef TCC_TARGET_RISCV64
-static void create_riscv_attribute_section(TCCState *s1)
-{
-    static const unsigned char riscv_attr[] = {
-        0x41,                           /* 'A' */
-        0x49, 0x00, 0x00, 0x00,         /* total_len = 73 */
-        'r', 'i', 's', 'c', 'v', 0x00,  /* "riscv\0" */
-        0x3a, 0x00, 0x00, 0x00,         /* file_len = 58 */
-        0x05,                           /* Tag_RISCV_arch */
-        0x35, 0x00, 0x00, 0x00,         /* isa_len = 53 */
-        'r','v','6','4','i','2','p','1','_','m','2','p','0','_',
-        'a','2','p','1','_','f','2','p','2','_','d','2','p','2','_',
-        'c','2','p','0','_','z','i','c','s','r','2','p','0','_',
-        'z','i','f','e','n','c','e','i','2','p','0', 0x00,
-    };
-    Section *attr = new_section(s1, ".riscv.attributes", SHT_RISCV_ATTRIBUTES, 0);
-    unsigned char *ptr = section_ptr_add(attr, sizeof(riscv_attr));
-    attr->sh_addralign = 1;
-    memcpy(ptr, riscv_attr, sizeof(riscv_attr));
-}
-#endif
+
 
 #if TARGETOS_OpenBSD || TARGETOS_NetBSD || TARGETOS_FreeBSD
 
@@ -3024,7 +3059,7 @@ static int elf_output_file(TCCState *s1, const char *filename)
     create_arm_attribute_section (s1);
 #endif
 
-#ifdef TCC_TARGET_RISCV64
+#ifdef TCC_TARGET_RISCV
     create_riscv_attribute_section(s1);
 #endif
 
@@ -3204,6 +3239,9 @@ static int elf_output_obj(TCCState *s1, const char *filename)
 {
     Section *s;
     int i, ret, file_offset;
+#ifdef TCC_TARGET_RISCV32
+    create_riscv_attribute_section(s1);
+#endif
     /* Allocate strings for section names */
     alloc_sec_names(s1, 1);
     file_offset = (sizeof (ElfW(Ehdr)) + 3) & -4;
@@ -3307,6 +3345,10 @@ ST_FUNC int tcc_load_object_file(TCCState *s1,
         goto invalid;
     /* test CPU specific stuff */
     if (ehdr.e_ident[5] != ELFDATA2LSB ||
+        ehdr.e_ident[EI_CLASS] != ELFCLASSW ||
+#ifdef TCC_TARGET_RISCV32
+        (ehdr.e_flags & ~EF_RISCV_RVC) != EF_RISCV_FLOAT_ABI_DOUBLE ||
+#endif
         ehdr.e_machine != EM_TCC_TARGET) {
 invalid:
         return tcc_error_noabort("invalid object file");
@@ -3351,6 +3393,13 @@ invalid:
     /* now examine each section and try to merge its content with the
        ones in memory */
     for(i = 1; i < ehdr.e_shnum; i++) {
+#ifdef TCC_TARGET_RISCV32
+        if (shdr[i].sh_type == SHT_REL ||
+            (shdr[i].sh_type == SHT_RELA && shdr[i].sh_entsize != sizeof(ElfW_Rel))) {
+            tcc_error_noabort("invalid RV32 relocation section");
+            goto the_end;
+        }
+#endif
         /* no need to examine section name strtab */
         if (i == ehdr.e_shstrndx)
             continue;
@@ -3444,7 +3493,7 @@ invalid:
             ptr = s->data + offset;
             full_read(fd, ptr, size);
         }
-#if defined TCC_TARGET_ARM || defined TCC_TARGET_ARM64 || defined TCC_TARGET_RISCV64
+#if defined TCC_TARGET_ARM || defined TCC_TARGET_ARM64 || defined TCC_TARGET_RISCV
         /* align code sections to instruction lenght */
         /* This is needed if we compile a c file after this */
         if (s->sh_flags & SHF_EXECINSTR)
@@ -3551,9 +3600,12 @@ invalid:
                 if (!sym_index && !sm_table[sh->sh_info].link_once
 #ifdef TCC_TARGET_ARM
                     && type != R_ARM_V4BX
-#elif defined TCC_TARGET_RISCV64
+#elif defined TCC_TARGET_RISCV
                     && type != R_RISCV_ALIGN
                     && type != R_RISCV_RELAX
+#ifdef TCC_TARGET_RISCV32
+                    && !(type == R_RISCV_32_PCREL && !ELFW(R_SYM)(rel->r_info))
+#endif
 #endif
                    ) {
                 invalid_reloc:

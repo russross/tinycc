@@ -64,7 +64,13 @@ void __clear_cache(void *beg, void *end)
 #elif defined __riscv
 void __clear_cache(void *beg, void *end)
 {
+#if __riscv_xlen == 32
+    /* Linux synchronizes this process across harts, including migrated threads. */
+    asm volatile ("mv a0,%0; mv a1,%1; li a2,0; li a7,259; ecall"
+                  : : "r"(beg), "r"(end) : "a0", "a1", "a2", "a7", "memory");
+#else
     __riscv64_clear_cache(beg, end);
+#endif
 }
 
 #endif

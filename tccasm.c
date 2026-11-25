@@ -29,12 +29,16 @@ static int tcc_assemble_internal(TCCState *s1, int do_preprocess, int global);
 static Sym* asm_new_label(TCCState *s1, int label, int is_local);
 static Sym* asm_new_label1(TCCState *s1, int label, int is_local, int sh_num, int value);
 
-#if PTR_SIZE == 8
+#if PTR_SIZE == 8 || defined TCC_TARGET_RISCV32
 /* output constant with relocation if 'r & VT_SYM' is true */
 ST_FUNC void gen_addr64(int r, Sym *sym, int64_t c)
 {
     if (r & VT_SYM)
+#ifdef TCC_TARGET_RISCV32
+        greloca(cur_text_section, sym, ind, R_RISCV_64, c), c=0;
+#else
         greloca(cur_text_section, sym, ind, R_DATA_PTR, c), c=0;
+#endif
     gen_le32(c);
     gen_le32(c>>32);
 }
@@ -566,7 +570,7 @@ static void asm_parse_directive(TCCState *s1, int global)
         ind += size;
         break;
     case TOK_ASMDIR_quad:
-#if PTR_SIZE == 8
+#if PTR_SIZE == 8 || defined TCC_TARGET_RISCV32
 	size = 8;
 	goto asm_data;
 #else
@@ -601,6 +605,10 @@ static void asm_parse_directive(TCCState *s1, int global)
         size = 1;
         goto asm_data;
     case TOK_ASMDIR_word:
+#ifdef TCC_TARGET_RISCV32
+        size = 4;
+        goto asm_data;
+#endif
     case TOK_ASMDIR_short:
         size = 2;
         goto asm_data;
@@ -615,7 +623,7 @@ static void asm_parse_directive(TCCState *s1, int global)
             if (sec->sh_type != SHT_NOBITS) {
                 if (size == 4) {
                     gen_expr32(&e);
-#if PTR_SIZE == 8
+#if PTR_SIZE == 8 || defined TCC_TARGET_RISCV32
 		} else if (size == 8) {
 		    gen_expr64(&e);
 #endif
@@ -982,7 +990,7 @@ static void asm_parse_directive(TCCState *s1, int global)
         next();
         break;
 #endif
-#ifdef TCC_TARGET_RISCV64
+#ifdef TCC_TARGET_RISCV
     case TOK_ASMDIR_option:
         next();
         switch(tok){
@@ -1029,7 +1037,7 @@ static void asm_parse_directive(TCCState *s1, int global)
 #if defined(TCC_TARGET_ARM64)
 	    if (!strcmp(reloc_name, "R_AARCH64_CALL26"))
 	        reloc_type = R_AARCH64_CALL26;
-#elif defined(TCC_TARGET_RISCV64)
+#elif defined(TCC_TARGET_RISCV)
 	    if (!strcmp(reloc_name, "R_RISCV_CALL") || !strcmp(reloc_name, "R_RISCV_CALL_PLT"))
 	        reloc_type = R_RISCV_CALL;
 	    else if (!strcmp(reloc_name, "R_RISCV_BRANCH"))
@@ -1053,8 +1061,16 @@ static void asm_parse_directive(TCCState *s1, int global)
 	        tcc_error("unimp: reloc '%s' unknown", reloc_name);
 	    next();
 	    skip(',');
+#ifdef TCC_TARGET_RISCV32
+            {
+                ExprValue target;
+                asm_expr(s1, &target);
+                greloca(cur_text_section, target.sym, e.v, reloc_type, target.v);
+            }
+#else
 	    greloca(cur_text_section, get_asm_sym(tok, NULL), e.v, reloc_type, 0);
 	    next();
+#endif
 	}
 	break;
     default:
@@ -1151,7 +1167,7 @@ static void tcc_assemble_inline(TCCState *s1, const char *str, int len, int glob
 {
     const int *saved_macro_ptr = macro_ptr;
     int dotid = set_idnum('.', IS_ID);
-#if !defined(TCC_TARGET_RISCV64) && !defined(TCC_TARGET_X86_64)
+#if !defined(TCC_TARGET_RISCV) && !defined(TCC_TARGET_X86_64)
     int dolid = set_idnum('$', 0);
 #endif
 
@@ -1161,7 +1177,7 @@ static void tcc_assemble_inline(TCCState *s1, const char *str, int len, int glob
     tcc_assemble_internal(s1, 0, global);
     tcc_close();
 
-#if !defined(TCC_TARGET_RISCV64) && !defined(TCC_TARGET_X86_64)
+#if !defined(TCC_TARGET_RISCV) && !defined(TCC_TARGET_X86_64)
     set_idnum('$', dolid);
 #endif
     set_idnum('.', dotid);
@@ -1230,7 +1246,7 @@ static void subst_asm_operands(ASMOperand *operands, int nb_operands,
 #ifdef TCC_TARGET_ARM64
                 *str == 'x' || *str == 's' || *str == 'd' || *str == 'Z' ||
 #endif
-#ifdef TCC_TARGET_RISCV64
+#ifdef TCC_TARGET_RISCV
 		*str == 'z' ||
 #endif
 		/* P in GCC would add "@PLT" to symbol refs in PIC mode,

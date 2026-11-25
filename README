@@ -7,8 +7,9 @@ Features:
 - SMALL! You can compile and execute C code everywhere, for example on
   rescue disks.
 
-- FAST! tcc generates machine code for i386, x86_64, arm, aarch64 or
-  riscv64.  Compiles and links about 10 times faster than 'gcc -O0'.
+- FAST! tcc generates machine code for i386, x86_64, arm, aarch64,
+  riscv32 (RV32GC/Linux ILP32D) and riscv64. Compiles and links about
+  10 times faster than 'gcc -O0'.
 
 - UNLIMITED! Any C dynamic library can be used directly. TCC is
   heading toward full ISOC99 compliance. TCC can of course compile
@@ -40,6 +41,12 @@ Documentation:
 makeinfo must be installed to compile the doc.  By default, tcc is
 installed in /usr/local/bin.  ./configure --help  shows configuration
 options.
+
+Run make cross-riscv32 to build riscv32-tcc and riscv32-libtcc1.a.
+Run make test-riscv32 with clang and qemu-riscv32 to check the cross build.
+Hosted linking requires a Linux ILP32D sysroot. When cross-compiling,
+long double constants and constant expressions use the build compiler's
+long double precision.
 
 
 2) Introduction

@@ -39,6 +39,7 @@ I386_O = libtcc1.o $(COMMON_O)
 X86_64_O = libtcc1.o $(COMMON_O)
 ARM_O = libtcc1.o armeabi.o armflush.o $(COMMON_O)
 ARM64_O = lib-arm64.o $(COMMON_O)
+RISCV32_O = libtcc1.o lib-arm64.o $(COMMON_O)
 RISCV64_O = lib-arm64.o $(COMMON_O)
 COMMON_O = stdatomic.o atomic.o builtin.o alloca.o alloca-bt.o
 WIN_O = crt1.o crt1w.o wincrt1.o wincrt1w.o dllcrt1.o dllmain.o winex.o
@@ -73,6 +74,7 @@ OBJ-arm-vfp = $(OBJ-arm)
 OBJ-arm-eabi = $(OBJ-arm)
 OBJ-arm-eabihf = $(OBJ-arm)
 OBJ-arm-wince = $(ARM_O) $(WIN_O)
+OBJ-riscv32 = $(RISCV32_O) armflush.o $(LIN_O)
 OBJ-riscv64 = $(RISCV64_O) armflush.o $(LIN_O)
 
 OBJ-extra = $(filter $(EXTRA_O),$(OBJ-$T))
@@ -96,7 +98,7 @@ $(TOP)/%.o : %.c $(TCC)
 
 $(TOP)/bcheck.o : XFLAGS += $(BFLAGS)
 $(TOP)/bcheck_run.o : bcheck.c $(TCC)
-	$S$(XCC) -c bcheck.c -o $@ $(XFLAGS)  $(BFLAGS) -DBCHECK_RUN
+	$S$(XCC) -c $< -o $@ $(XFLAGS)  $(BFLAGS) -DBCHECK_RUN
 
 $(X)crt1w.o : crt1.c
 $(X)wincrt1w.o : wincrt1.c

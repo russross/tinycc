@@ -377,7 +377,7 @@ long double __divtf3(long double fa, long double fb)
 
 long double __negtf2(long double f)
 {
-    ((u128_t*)&f)->x1 ^= 1UL << 63;
+    ((u128_t*)&f)->x1 ^= 1ULL << 63;
     return f;
 }
 

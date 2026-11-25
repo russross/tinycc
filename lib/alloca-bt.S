@@ -187,11 +187,19 @@ _(__bound_alloca):
     andi   sp, sp, -16
     add    a0, sp, zero
     addi   sp,sp,-16
+#if __riscv_xlen == 32
+    sw     s0,0(sp)
+    sw     ra,4(sp)
+    call   _(__bound_new_region)
+    lw     s0,0(sp)
+    lw     ra,4(sp)
+#else
     sd     s0,0(sp)
     sd     ra,8(sp)
     jal    _(__bound_new_region)
     ld     s0,0(sp)
     ld     ra,8(sp)
+#endif
     addi   sp,sp,16
     add    a0, sp, zero
     ret

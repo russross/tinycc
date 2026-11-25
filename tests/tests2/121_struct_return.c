@@ -10,6 +10,17 @@ typedef struct {
     int a, b, c;
 } A;
 
+typedef struct {
+    int value;
+    int *ptr;
+} Pair;
+
+/* A checked dereference can involve a call before the return is loaded. */
+Pair load_pair(const Pair *p)
+{
+    return *p;
+}
+
 Node init(Node self) {
     self.data[0] = 0;
     self.data[1] = 1;
@@ -49,5 +60,8 @@ int main(void) {
     print_data(data);
     a = test();
     printf("%d\n", a.b);
+    Pair pair = { 17, &a.b };
+    pair = load_pair(&pair);
+    printf("%d %d\n", pair.value, pair.ptr == &a.b);
     return 0;
 }

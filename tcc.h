@@ -157,12 +157,13 @@ extern long double strtold (const char *__nptr, char **__endptr);
 /* #define TCC_TARGET_ARM    *//* ARMv4 code generator */
 /* #define TCC_TARGET_ARM64  *//* ARMv8 code generator */
 /* #define TCC_TARGET_C67    *//* TMS320C67xx code generator */
+/* #define TCC_TARGET_RISCV32 *//* risc-v code generator */
 /* #define TCC_TARGET_RISCV64 *//* risc-v code generator */
 
 /* default target is I386 */
 #if !defined(TCC_TARGET_I386) && !defined(TCC_TARGET_ARM) && \
     !defined(TCC_TARGET_ARM64) && !defined(TCC_TARGET_C67) && \
-    !defined(TCC_TARGET_X86_64) && !defined(TCC_TARGET_RISCV64)
+    !defined(TCC_TARGET_X86_64) && !defined(TCC_TARGET_RISCV64) && !defined(TCC_TARGET_RISCV32)
 # if defined __x86_64__
 #  define TCC_TARGET_X86_64
 # elif defined __arm__
@@ -172,7 +173,9 @@ extern long double strtold (const char *__nptr, char **__endptr);
 #  define TCC_ARM_HARDFLOAT
 # elif defined __aarch64__
 #  define TCC_TARGET_ARM64
-# elif defined __riscv
+# elif defined __riscv && __riscv_xlen == 32
+#  define TCC_TARGET_RISCV32
+# elif defined __riscv && __riscv_xlen == 64
 #  define TCC_TARGET_RISCV64
 # else
 #  define TCC_TARGET_I386
@@ -183,6 +186,10 @@ extern long double strtold (const char *__nptr, char **__endptr);
 # ifdef __APPLE__
 #  define TCC_TARGET_MACHO 1
 # endif
+#endif
+
+#if defined TCC_TARGET_RISCV32 || defined TCC_TARGET_RISCV64
+# define TCC_TARGET_RISCV 1
 #endif
 
 /* only native compiler supports -run */
@@ -196,7 +203,10 @@ extern long double strtold (const char *__nptr, char **__endptr);
 #  define TCC_IS_NATIVE
 # elif defined __aarch64__ && defined TCC_TARGET_ARM64
 #  define TCC_IS_NATIVE
-# elif defined __riscv && defined __LP64__ && defined TCC_TARGET_RISCV64
+# elif defined __riscv && __riscv_xlen == 64 && defined __LP64__ && defined TCC_TARGET_RISCV64
+#  define TCC_IS_NATIVE
+# elif defined __riscv && __riscv_xlen == 32 && defined __linux__ && \
+       defined __riscv_float_abi_double && defined TCC_TARGET_RISCV32
 #  define TCC_IS_NATIVE
 # endif
 #endif
@@ -308,6 +318,8 @@ extern long double strtold (const char *__nptr, char **__endptr);
 #  define CONFIG_TCC_ELFINTERP "/lib/ld-linux-aarch64.so.1"
 # elif defined(TCC_TARGET_X86_64)
 #  define CONFIG_TCC_ELFINTERP "/lib64/ld-linux-x86-64.so.2"
+# elif defined(TCC_TARGET_RISCV32)
+#  define CONFIG_TCC_ELFINTERP "/lib/ld-linux-riscv32-ilp32d.so.1"
 # elif defined(TCC_TARGET_RISCV64)
 #  define CONFIG_TCC_ELFINTERP "/lib/ld-linux-riscv64-lp64d.so.1"
 # elif defined(TCC_TARGET_ARM)
@@ -383,10 +395,10 @@ extern long double strtold (const char *__nptr, char **__endptr);
 # include "coff.h"
 # include "c67-gen.c"
 # include "c67-link.c"
-#elif defined(TCC_TARGET_RISCV64)
-# include "riscv64-gen.c"
-# include "riscv64-link.c"
-# include "riscv64-asm.c"
+#elif defined(TCC_TARGET_RISCV)
+# include "riscv-gen.c"
+# include "riscv-link.c"
+# include "riscv-asm.c"
 #else
 #error unknown target
 #endif
@@ -398,13 +410,18 @@ extern long double strtold (const char *__nptr, char **__endptr);
 # define ELFCLASSW ELFCLASS64
 # define ElfW(type) Elf##64##_##type
 # define ELFW(type) ELF##64##_##type
-# define ElfW_Rel ElfW(Rela)
-# define SHT_RELX SHT_RELA
-# define REL_SECTION_FMT ".rela%s"
 #else
 # define ELFCLASSW ELFCLASS32
 # define ElfW(type) Elf##32##_##type
 # define ELFW(type) ELF##32##_##type
+#endif
+
+/* ELF class and relocation addend storage are independent. */
+#if PTR_SIZE == 8 || defined TCC_TARGET_RISCV32
+# define ElfW_Rel ElfW(Rela)
+# define SHT_RELX SHT_RELA
+# define REL_SECTION_FMT ".rela%s"
+#else
 # define ElfW_Rel ElfW(Rel)
 # define SHT_RELX SHT_REL
 # define REL_SECTION_FMT ".rel%s"
@@ -936,7 +953,7 @@ struct TCCState {
 
     addr_t tls_start, tls_end;
 
-#ifdef TCC_TARGET_RISCV64
+#ifdef TCC_TARGET_RISCV
     struct pcrel_hi { addr_t addr, val; } **pcrel_hi_entries;
     int nb_pcrel_hi_entries;
 #endif
@@ -1463,7 +1480,7 @@ ST_FUNC ElfSym *elfsym(Sym *);
 ST_FUNC void update_storage(Sym *sym);
 ST_FUNC void put_extern_sym2(Sym *sym, int sh_num, addr_t value, unsigned long size, int can_add_underscore);
 ST_FUNC void put_extern_sym(Sym *sym, Section *section, addr_t value, unsigned long size);
-#if PTR_SIZE == 4
+#if SHT_RELX == SHT_REL
 ST_FUNC void greloc(Section *s, Sym *sym, unsigned long offset, int type);
 #endif
 ST_FUNC void greloca(Section *s, Sym *sym, unsigned long offset, int type, addr_t addend);
@@ -1505,6 +1522,7 @@ ST_FUNC int get_reg(int rc);
 ST_FUNC void save_regs(int n);
 ST_FUNC void gaddrof(void);
 ST_FUNC int gv(int rc);
+ST_FUNC void materialize_float_constant(void);
 ST_FUNC void gv2(int rc1, int rc2);
 ST_FUNC void gen_op(int op);
 ST_FUNC int type_size(CType *type, int *a);
@@ -1721,11 +1739,19 @@ ST_FUNC void gen_cvt_csti(int t);
 ST_FUNC void gen_increment_tcov (SValue *sv);
 #endif
 
-/* ------------ riscv64-gen.c ------------ */
-#ifdef TCC_TARGET_RISCV64
-ST_FUNC void gen_opl(int op);
+/* ------------ riscv-gen.c ------------ */
+#ifdef TCC_TARGET_RISCV32
+struct RiscvFrame {
+    int stack_adjust, vararg_save, epilog, large_prolog;
+};
+ST_DATA struct RiscvFrame riscv_frame;
+#endif
+#ifdef TCC_TARGET_RISCV
 ST_FUNC void gen_va_start(void);
 ST_FUNC void arch_transfer_ret_regs(int);
+#endif
+#ifdef TCC_TARGET_RISCV64
+ST_FUNC void gen_opl(int op);
 ST_FUNC void gen_cvt_sxtw(void);
 ST_FUNC void gen_cvt_csti(int t);
 ST_FUNC void gen_increment_tcov (SValue *sv);

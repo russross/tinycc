@@ -116,6 +116,7 @@ DEF-arm64-FreeBSD  = $(DEF-arm64) -DTARGETOS_FreeBSD
 DEF-arm64-NetBSD   = $(DEF-arm64) -DTARGETOS_NetBSD
 DEF-arm64-OpenBSD  = $(DEF-arm64) -DTARGETOS_OpenBSD
 DEF-arm64-win32    = $(DEF-arm64) -DTCC_TARGET_PE
+DEF-riscv32        = -DTCC_TARGET_RISCV32
 DEF-riscv64        = -DTCC_TARGET_RISCV64
 DEF-c67            = -DTCC_TARGET_C67 -w # disable warnigs
 DEF-x86_64-FreeBSD = $(DEF-x86_64) -DTARGETOS_FreeBSD
@@ -134,7 +135,7 @@ all: $(PROGS) $(TCCLIBS) $(TCCDOCS)
 
 # cross compiler targets to build
 TCC_X = i386 x86_64 i386-win32 x86_64-win32 x86_64-osx arm arm64 arm64-win32 arm-wince c67
-TCC_X += riscv64 arm64-osx
+TCC_X += riscv32 riscv64 arm64-osx
 # TCC_X += arm-fpa arm-fpa-ld arm-vfp arm-eabi
 
 # cross libtcc1.a targets to build
@@ -147,6 +148,11 @@ LIBTCC1_CROSS = $(foreach X,$(LIBTCC1_X),$X-libtcc1.a)
 cross: $(LIBTCC1_CROSS) $(PROGS_CROSS)
 
 # build specific cross compiler & lib
+# Run RV32 binaries without a target sysroot.
+.PHONY: test-riscv32
+test-riscv32: cross-riscv32
+	$(TOPSRC)/tests/riscv32-smoke.sh ./riscv32-tcc$(EXESUF) $(TOPSRC)/tests riscv32-libtcc1.a
+
 cross-%: %-tcc$(EXESUF) %-libtcc1.a ;
 
 install: ; @$(MAKE) --no-print-directory  install$(CFG)
@@ -171,6 +177,7 @@ TRIPLET-i386 = i686-linux-gnu
 TRIPLET-x86_64 = x86_64-linux-gnu
 TRIPLET-arm = arm-linux-gnueabihf
 TRIPLET-arm64 = aarch64-linux-gnu
+TRIPLET-riscv32 = riscv32-linux-gnu
 TRIPLET-riscv64 = riscv64-linux-gnu
 ifneq ($(TRIPLET-$T),)
 # assume support files in "/usr/<triplet>"
@@ -216,7 +223,8 @@ arm64_FILES = $(CORE_FILES) arm64-gen.c arm64-link.c arm64-asm.c arm64-tok.h
 arm64-osx_FILES = $(arm64_FILES) tccmacho.c
 arm64-win32_FILES = $(arm64_FILES) tccpe.c
 c67_FILES = $(CORE_FILES) c67-gen.c c67-link.c tcccoff.c
-riscv64_FILES = $(CORE_FILES) riscv64-gen.c riscv64-link.c riscv64-asm.c
+riscv64_FILES = $(CORE_FILES) riscv-gen.c riscv-link.c riscv-asm.c riscv-tok.h
+riscv32_FILES = $(riscv64_FILES)
 
 TCCDEFS_H$(subst yes,,$(CONFIG_predefs)) = tccdefs_.h
 

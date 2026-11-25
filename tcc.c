@@ -190,6 +190,8 @@ static const char version[] =
 # endif
 #elif defined TCC_TARGET_ARM64
         "AArch64"
+#elif defined TCC_TARGET_RISCV32
+    "riscv32"
 #elif defined TCC_TARGET_RISCV64
         "riscv64"
 #endif
